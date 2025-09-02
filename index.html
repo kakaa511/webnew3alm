@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>نظام إدارة الموظفين - عالم العروس</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Cairo:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <!-- Login Screen -->
+    <div id="loginScreen" class="login-container">
+        <div class="login-card">
+            <div class="login-logo">عالم العروس</div>
+            <p class="login-subtitle">نظام إدارة الموظفين</p>
+            
+            <form id="loginForm">
+                <div class="form-group">
+                    <label for="username">اسم المستخدم</label>
+                    <input type="text" id="username" class="form-control" required placeholder="أدخل اسم المستخدم">
+                </div>
+                
+                <div class="form-group">
+                    <label for="password">كلمة المرور</label>
+                    <input type="password" id="password" class="form-control" required placeholder="أدخل كلمة المرور">
+                </div>
+                
+                <button type="submit" id="loginBtn" class="btn-login">
+                    تسجيل الدخول
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Dashboard -->
+    <div id="dashboard" class="dashboard">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-content">
+                <div class="logo">عالم العروس</div>
+                <div class="user-info">
+                    <div class="user-avatar" id="userAvatar">👤</div>
+                    <div class="user-details">
+                        <h4 id="userName">اسم المستخدم</h4>
+                        <p id="userRole">الصلاحية</p>
+                    </div>
+                    <button class="btn-logout" onclick="logout()">تسجيل الخروج</button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Sidebar Navigation -->
+            <nav class="sidebar">
+                <div id="navigationMenu">
+                    <!-- Navigation items will be generated based on user role -->
+                </div>
+            </nav>
+
+            <!-- Content Area -->
+            <main class="content-area">
+                <!-- Overview Tab (Admin Only) -->
+                <div id="overview" class="tab-content">
+                    <div class="content-header">
+                        <h2 class="content-title">
+                            <span class="icon">📊</span>
+                            نظرة عامة على المشغل
+                        </h2>
+                    </div>
+                    <div class="content-body">
+                        <div class="stats-container">
+                            <div class="stat-card">
+                                <span class="stat-icon">💰</span>
+                                <span class="stat-value">85,000</span>
+                                <span class="stat-label">إجمالي الدخل (ريال)</span>
+                            </div>
+                            <div class="stat-card">
+                                <span class="stat-icon">👥</span>
+                                <span class="stat-value">456</span>
+                                <span class="stat-label">إجمالي العملاء</span>
+                            </div>
+                            <div class="stat-card">
+                                <span class="stat-icon">👩‍💼</span>
+                                <span class="stat-value">12</span>
+                                <span class="stat-label">عدد الموظفين</span>
+                            </div>
+                            <div class="stat-card">
+                                <span class="stat-icon">✨</span>
+                                <span class="stat-value">156</span>
+                                <span class="stat-label">الخدمات المقدمة</span>
+                            </div>
+                        </div>
+                        
+                        <div class="simple-table">
+                            <div class="table-header">الإيرادات الشهرية</div>
+                            <div class="table-row">
+                                <span class="row-label">إيرادات هذا الشهر</span>
+                                <span class="row-value positive">28,500 ريال</span>
+                            </div>
+                            <div class="table-row">
+                                <span class="row-label">إيرادات الشهر الماضي</span>
+                                <span class="row-value">25,200 ريال</span>
+                            </div>
+                            <div class="table-row">
+                                <span class="row-label">الزيادة</span>
+                                <span class="row-value positive">+13.1%</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Employee Management Tab (Admin Only) -->
+                <div id="employees" class="tab-content">
+                    <div class="content-header">
+                        <h2 class="content-title">
+                            <span class="icon">👥</span>
+                            إدارة الموظفين
+                        </h2>
+                    </div>
+                    <div class="content-body">
+                        <div style="text-align: center; margin-bottom: 30px;">
+                            <button class="btn btn-primary" onclick="showAddEmployeeForm()">
+                                <span>➕</span> إضافة موظف جديد
+                            </button>
+                        </div>
+                        
+                        <div class="employee-grid" id="employeeGrid">
+                            <!-- Employee cards will be generated here -->
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Attendance Tab -->
+                <div id="attendance" class="tab-content">
+                    <div class="content-header">
+                        <h2 class="content-title">
+                            <span class="icon">📅</span>
+                            <span id="attendanceTitle">سجل الحضور</span>
+                        </h2>
+                    </div>
+                    <div class="content-body">
+                        <div class="stats-container" id="attendanceStats">
+                            <!-- Attendance stats will be generated here -->
+                        </div>
+                        
+                        <div class="calendar" id="attendanceCalendar">
+                            <div class="calendar-header">تقويم الحضور - سبتمبر 2025</div>
+                            <div class="calendar-grid" id="calendarGrid">
+                                <!-- Calendar will be generated here -->
+                            </div>
+                            <div class="calendar-legend">
+                                <div class="legend-item">
+                                    <div class="legend-dot" style="background: var(--success);"></div>
+                                    <span>حضور</span>
+                                </div>
+                                <div class="legend-item">
+                                    <div class="legend-dot" style="background: var(--danger);"></div>
+                                    <span>غياب</span>
+                                </div>
+                                <div class="legend-item">
+                                    <div class="legend-dot" style="background: rgba(108, 117, 125, 0.3);"></div>
+                                    <span>عطلة</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Salary Tab -->
+                <div id="salary" class="tab-content">
+                    <div class="content-header">
+                        <h2 class="content-title">
+                            <span class="icon">💰</span>
+                            <span id="salaryTitle">الرواتب</span>
+                        </h2>
+                    </div>
+                    <div class="content-body" id="salaryContent">
+                        <!-- Salary content will be generated based on user role -->
+                    </div>
+                </div>
+
+                <!-- Schedule Tab -->
+                <div id="schedule" class="tab-content">
+                    <div class="content-header">
+                        <h2 class="content-title">
+                            <span class="icon">📋</span>
+                            جدول العمل
+                        </h2>
+                    </div>
+                    <div class="content-body">
+                        <div class="stats-container">
+                            <div class="stat-card">
+                                <span class="stat-icon">⏰</span>
+                                <span class="stat-value">8</span>
+                                <span class="stat-label">ساعات العمل اليومي</span>
+                            </div>
+                            <div class="stat-card">
+                                <span class="stat-icon">📅</span>
+                                <span class="stat-value">6</span>
+                                <span class="stat-label">أيام العمل الأسبوعي</span>
+                            </div>
+                            <div class="stat-card">
+                                <span class="stat-icon">👤</span>
+                                <span class="stat-value">12</span>
+                                <span class="stat-label">المواعيد اليوم</span>
+                            </div>
+                        </div>
+                        
+                        <div class="simple-table">
+                            <div class="table-header">مواعيد اليوم - الثلاثاء 2 سبتمبر</div>
+                            <div class="table-row">
+                                <span class="row-label">9:00 ص - سارة محمد</span>
+                                <span class="row-value">مكياج عروس</span>
+                            </div>
+                            <div class="table-row">
+                                <span class="row-label">11:00 ص - نورا أحمد</span>
+                                <span class="row-value">قص وصبغ</span>
+                            </div>
+                            <div class="table-row">
+                                <span class="row-label">2:00 م - فاطمة علي</span>
+                                <span class="row-value">عناية بشرة</span>
+                            </div>
+                            <div class="table-row">
+                                <span class="row-label">4:00 م - أمل خالد</span>
+                                <span class="row-value">مانيكير وبيديكير</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Reports Tab -->
+                <div id="reports" class="tab-content">
+                    <div class="content-header">
+                        <h2 class="content-title">
+                            <span class="icon">📈</span>
+                            التقارير والإحصائيات
+                        </h2>
+                    </div>
+                    <div class="content-body" id="reportsContent">
+                        <!-- Reports content will be generated based on user role -->
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- Modal for Employee Details -->
+    <div id="employeeModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modalTitle">تفاصيل الموظف</h3>
+                <span class="close" onclick="closeModal()">&times;</span>
+            </div>
+            <div class="modal-body" id="modalBody">
+                <!-- Modal content will be generated dynamically -->
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-primary" id="saveBtn" onclick="saveChanges()">حفظ التغييرات</button>
+                <button class="btn btn-secondary" onclick="closeModal()">إلغاء</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Overlay -->
+    <div id="modalOverlay" class="modal-overlay" onclick="closeModal()"></div>
+
+    <script src="script.js"></script>
+</body>
+</html>
