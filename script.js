@@ -838,10 +838,9 @@ function toggleAttendance(dateKey, element) {
     element.setAttribute('data-status', newStatus);
 }
 
-// Save functions
+// Save functions - محدثة لاستخدام التخزين المحلي
 function saveNewEmployee() {
     const form = document.getElementById('addEmployeeForm');
-    const formData = new FormData(form);
     
     const name = document.getElementById('employeeName').value.trim();
     const position = document.getElementById('employeePosition').value;
@@ -856,14 +855,21 @@ function saveNewEmployee() {
         return;
     }
     
-    // Generate new employee ID
-    const employeeCount = Object.values(users).filter(u => u.role === 'employee').length;
-    const newId = `EMP${String(employeeCount + 1).padStart(3, '0')}`;
-    const username = name.replace(/\s+/g, '_').toLowerCase();
+    // التحقق من عدم تكرار الأسماء
+    const existingEmployees = dataStorage.getAllEmployees();
+    const nameExists = existingEmployees.some(emp => emp.name.toLowerCase() === name.toLowerCase());
+    if (nameExists) {
+        showNotification('يوجد موظف بنفس الاسم بالفعل', 'error');
+        return;
+    }
     
-    // Add new employee to users object
-    users[username] = {
-        password: 'emp123', // Default password
+    // إنشاء معرف جديد للموظف
+    const employeeCount = existingEmployees.length;
+    const newId = `EMP${String(employeeCount + 1).padStart(3, '0')}`;
+    const username = name.replace(/\s+/g, '_').toLowerCase() + '_' + Date.now();
+    
+    const newEmployee = {
+        password: 'emp123', // كلمة مرور افتراضية
         role: 'employee',
         name: name,
         id: newId,
@@ -876,12 +882,25 @@ function saveNewEmployee() {
         attendance: 0,
         absences: 0,
         delays: 0,
-        attendanceRecord: {}
+        attendanceRecord: {},
+        createdAt: new Date().toISOString(),
+        lastUpdated: new Date().toISOString()
     };
     
-    showNotification(`تم إضافة الموظف ${name} بنجاح!`, 'success');
-    closeModal();
-    setupEmployeeGrid(); // Refresh the employee grid
+    // حفظ في التخزين المحلي
+    if (dataStorage.addEmployee(username, newEmployee)) {
+        // تحديث المتغير المحلي
+        users = dataStorage.getData();
+        
+        showNotification(`تم إضافة الموظف ${name} بنجاح!`, 'success');
+        closeModal();
+        setupEmployeeGrid(); // تحديث شبكة الموظفين
+        
+        // إنشاء سجل في النشاط
+        logActivity('إضافة موظف', `تم إضافة موظف جديد: ${name} (${newId})`);
+    } else {
+        showNotification('فشل في إضافة الموظف', 'error');
+    }
 }
 
 function saveEmployeeChanges() {
@@ -898,26 +917,39 @@ function saveEmployeeChanges() {
         return;
     }
     
-    // Find and update the employee
+    // البحث عن الموظف وتحديث بياناته
+    let updatedUsername = null;
     for (let [username, user] of Object.entries(users)) {
         if (user.id === currentEditingEmployee) {
-            users[username] = {
-                ...user,
+            const updatedData = {
                 name: name,
                 position: position,
                 salary: salary,
                 phone: phone,
                 email: email,
                 joinDate: joinDate,
-                address: address
+                address: address,
+                lastUpdated: new Date().toISOString()
             };
-            break;
+            
+            if (dataStorage.updateEmployee(username, updatedData)) {
+                updatedUsername = username;
+                users = dataStorage.getData(); // تحديث البيانات المحلية
+                break;
+            }
         }
     }
     
-    showNotification(`تم تحديث بيانات ${name} بنجاح!`, 'success');
-    closeModal();
-    setupEmployeeGrid(); // Refresh the employee grid
+    if (updatedUsername) {
+        showNotification(`تم تحديث بيانات ${name} بنجاح!`, 'success');
+        closeModal();
+        setupEmployeeGrid(); // تحديث شبكة الموظفين
+        
+        // إنشاء سجل في النشاط
+        logActivity('تحديث موظف', `تم تحديث بيانات الموظف: ${name}`);
+    } else {
+        showNotification('فشل في تحديث البيانات', 'error');
+    }
 }
 
 function saveSalaryChanges() {
@@ -930,69 +962,339 @@ function saveSalaryChanges() {
         return;
     }
     
-    // Find and update employee salary
+    // البحث عن الموظف وتحديث راتبه
+    let updatedEmployee = null;
     for (let [username, user] of Object.entries(users)) {
         if (user.id === currentEditingEmployee) {
             const oldSalary = user.salary;
-            users[username].salary = newSalary;
+            const updatedData = {
+                salary: newSalary,
+                salaryHistory: [
+                    ...(user.salaryHistory || []),
+                    {
+                        oldSalary: oldSalary,
+                        newSalary: newSalary,
+                        allowances: allowances,
+                        notes: notes,
+                        changedBy: currentUser.name,
+                        changeDate: new Date().toISOString()
+                    }
+                ],
+                lastUpdated: new Date().toISOString()
+            };
             
-            // Log the change
-            console.log(`تم تحديث راتب ${user.name} من ${oldSalary} إلى ${newSalary}`);
-            if (notes) {
-                console.log(`ملاحظات: ${notes}`);
+            if (dataStorage.updateEmployee(username, updatedData)) {
+                updatedEmployee = user.name;
+                users = dataStorage.getData(); // تحديث البيانات المحلية
+                break;
             }
-            
-            showNotification(`تم تحديث راتب ${user.name} بنجاح!`, 'success');
-            break;
         }
     }
     
-    closeModal();
-    setupAdminContent(); // Refresh admin content
+    if (updatedEmployee) {
+        showNotification(`تم تحديث راتب ${updatedEmployee} بنجاح!`, 'success');
+        closeModal();
+        setupAdminContent(); // تحديث المحتوى الإداري
+        
+        // إنشاء سجل في النشاط
+        logActivity('تحديث راتب', `تم تحديث راتب الموظف: ${updatedEmployee} من ${users[Object.keys(users).find(k => users[k].id === currentEditingEmployee)].salary} إلى ${newSalary}`);
+    } else {
+        showNotification('فشل في تحديث الراتب', 'error');
+    }
 }
 
 function saveAttendanceChanges() {
-    // Get all day selectors and update attendance record
     const daySelectors = document.querySelectorAll('.day-selector[data-status]');
     const employee = findEmployeeById(currentEditingEmployee);
     
-    if (!employee) return;
+    if (!employee) {
+        showNotification('لم يتم العثور على الموظف', 'error');
+        return;
+    }
     
-    // Find employee in users object and update
+    let updatedUsername = null;
     for (let [username, user] of Object.entries(users)) {
         if (user.id === currentEditingEmployee) {
-            if (!users[username].attendanceRecord) {
-                users[username].attendanceRecord = {};
-            }
-            
+            const attendanceRecord = { ...(user.attendanceRecord || {}) };
             let presentCount = 0;
             let absentCount = 0;
+            let changes = [];
             
             daySelectors.forEach(selector => {
                 const date = selector.getAttribute('data-date');
                 const status = selector.getAttribute('data-status');
                 
-                if (status) {
-                    users[username].attendanceRecord[date] = status;
-                    if (status === 'present') presentCount++;
-                    else if (status === 'absent') absentCount++;
+                if (status && attendanceRecord[date] !== status) {
+                    changes.push({ date, oldStatus: attendanceRecord[date] || 'غير محدد', newStatus: status });
+                    attendanceRecord[date] = status;
                 }
             });
             
-            // Update attendance counters
-            const totalPresent = Object.values(users[username].attendanceRecord).filter(s => s === 'present').length;
-            const totalAbsent = Object.values(users[username].attendanceRecord).filter(s => s === 'absent').length;
+            // إعادة حساب الإحصائيات
+            Object.values(attendanceRecord).forEach(status => {
+                if (status === 'present') presentCount++;
+                else if (status === 'absent') absentCount++;
+            });
             
-            users[username].attendance = totalPresent;
-            users[username].absences = totalAbsent;
+            const updatedData = {
+                attendanceRecord: attendanceRecord,
+                attendance: presentCount,
+                absences: absentCount,
+                attendanceHistory: [
+                    ...(user.attendanceHistory || []),
+                    {
+                        changes: changes,
+                        changedBy: currentUser.name,
+                        changeDate: new Date().toISOString()
+                    }
+                ],
+                lastUpdated: new Date().toISOString()
+            };
             
-            break;
+            if (dataStorage.updateEmployee(username, updatedData)) {
+                updatedUsername = username;
+                users = dataStorage.getData();
+                break;
+            }
         }
     }
     
-    showNotification(`تم تحديث سجل حضور ${employee.name} بنجاح!`, 'success');
-    closeModal();
-    setupEmployeeGrid(); // Refresh the employee grid
+    if (updatedUsername) {
+        showNotification(`تم تحديث سجل حضور ${employee.name} بنجاح!`, 'success');
+        closeModal();
+        setupEmployeeGrid();
+        
+        // إنشاء سجل في النشاط
+        logActivity('تحديث حضور', `تم تحديث سجل حضور الموظف: ${employee.name}`);
+    } else {
+        showNotification('فشل في تحديث سجل الحضور', 'error');
+    }
+}
+
+// دالة لتسجيل النشاطات
+function logActivity(type, description) {
+    const activities = JSON.parse(localStorage.getItem('alamalarous_activities') || '[]');
+    activities.unshift({
+        id: Date.now(),
+        type: type,
+        description: description,
+        user: currentUser.name,
+        timestamp: new Date().toISOString(),
+        date: new Date().toLocaleDateString('ar-SA')
+    });
+    
+    // الاحتفاظ بآخر 100 نشاط فقط
+    if (activities.length > 100) {
+        activities.splice(100);
+    }
+    
+    localStorage.setItem('alamalarous_activities', JSON.stringify(activities));
+}
+
+// دالة للحصول على سجل النشاطات
+function getActivities(limit = 10) {
+    const activities = JSON.parse(localStorage.getItem('alamalarous_activities') || '[]');
+    return activities.slice(0, limit);
+}
+
+// إعداد قسم إدارة البيانات
+function setupDataManagement() {
+    updateDataStats();
+    displayRecentActivities();
+}
+
+// تحديث إحصائيات البيانات
+function updateDataStats() {
+    const allData = dataStorage.getData() || {};
+    const employees = Object.values(allData).filter(user => user.role === 'employee');
+    const activities = getActivities(1000);
+    
+    // حساب حجم البيانات
+    const dataStr = JSON.stringify(allData);
+    const dataSize = new Blob([dataStr]).size;
+    const dataSizeKB = (dataSize / 1024).toFixed(2);
+    
+    // آخر نسخة احتياطية
+    const lastBackup = localStorage.getItem('alamalarous_last_backup');
+    const lastBackupDate = lastBackup ? new Date(lastBackup).toLocaleDateString('ar-SA') : 'لا يوجد';
+    
+    // تحديث القيم
+    document.getElementById('totalEmployeesCount').textContent = employees.length;
+    document.getElementById('dataSize').textContent = `${dataSizeKB} KB`;
+    document.getElementById('lastBackup').textContent = lastBackupDate;
+    document.getElementById('totalActivities').textContent = activities.length;
+}
+
+// عرض النشاطات الحديثة
+function displayRecentActivities() {
+    const activities = getActivities(10);
+    const container = document.getElementById('recentActivities');
+    
+    if (activities.length === 0) {
+        container.innerHTML = '<div style="padding: 24px; text-align: center; color: var(--slate-gray);">لا توجد نشاطات مسجلة</div>';
+        return;
+    }
+    
+    container.innerHTML = activities.map(activity => `
+        <div class="table-row">
+            <div>
+                <div style="font-weight: 600; color: var(--deep-navy);">${activity.type}</div>
+                <div style="font-size: 0.9rem; color: var(--slate-gray); margin-top: 2px;">${activity.description}</div>
+                <div style="font-size: 0.8rem; color: var(--slate-gray); margin-top: 4px;">بواسطة: ${activity.user}</div>
+            </div>
+            <div style="text-align: left; color: var(--slate-gray); font-size: 0.85rem;">
+                <div>${activity.date}</div>
+                <div style="margin-top: 2px;">${new Date(activity.timestamp).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })}</div>
+            </div>
+        </div>
+    `).join('');
+}
+
+// تصدير البيانات
+function exportData() {
+    try {
+        const allData = {
+            employees: dataStorage.getData(),
+            activities: JSON.parse(localStorage.getItem('alamalarous_activities') || '[]'),
+            exportDate: new Date().toISOString(),
+            version: '1.0'
+        };
+        
+        const dataStr = JSON.stringify(allData, null, 2);
+        const dataBlob = new Blob([dataStr], {type: 'application/json'});
+        const url = URL.createObjectURL(dataBlob);
+        
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `alamalarous_backup_${new Date().toISOString().split('T')[0]}.json`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        
+        // تسجيل تاريخ النسخة الاحتياطية
+        localStorage.setItem('alamalarous_last_backup', new Date().toISOString());
+        
+        logActivity('نسخة احتياطية', 'تم تصدير نسخة احتياطية كاملة من البيانات');
+        showNotification('تم تصدير النسخة الاحتياطية بنجاح', 'success');
+        updateDataStats();
+        
+    } catch (error) {
+        console.error('خطأ في تصدير البيانات:', error);
+        showNotification('حدث خطأ أثناء تصدير البيانات', 'error');
+    }
+}
+
+// التعامل مع استيراد الملف
+function handleImportFile(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    if (file.type !== 'application/json') {
+        showNotification('يرجى اختيار ملف JSON صحيح', 'error');
+        return;
+    }
+    
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        try {
+            const importedData = JSON.parse(e.target.result);
+            
+            // التحقق من صحة البيانات
+            if (!importedData.employees) {
+                showNotification('ملف البيانات غير صحيح', 'error');
+                return;
+            }
+            
+            // تأكيد الاستيراد
+            if (confirm('هذا سيحل محل جميع البيانات الحالية. هل أنت متأكد؟')) {
+                // استيراد البيانات
+                dataStorage.saveData(importedData.employees);
+                
+                // استيراد النشاطات إن وجدت
+                if (importedData.activities) {
+                    localStorage.setItem('alamalarous_activities', JSON.stringify(importedData.activities));
+                }
+                
+                // تحديث البيانات المحلية
+                users = dataStorage.getData();
+                
+                logActivity('استيراد بيانات', 'تم استيراد بيانات جديدة من نسخة احتياطية');
+                showNotification('تم استيراد البيانات بنجاح', 'success');
+                
+                // إعادة تحميل الصفحة لتحديث العرض
+                setTimeout(() => {
+                    location.reload();
+                }, 1500);
+            }
+            
+        } catch (error) {
+            console.error('خطأ في استيراد البيانات:', error);
+            showNotification('خطأ في قراءة ملف البيانات', 'error');
+        }
+    };
+    
+    reader.readAsText(file);
+    // مسح قيمة input لتمكين اختيار نفس الملف مرة أخرى
+    event.target.value = '';
+}
+
+// مسح جميع البيانات
+function clearAllData() {
+    const confirmation = prompt('لحذف جميع البيانات، اكتب "حذف نهائي" في الصندوق أدناه:');
+    
+    if (confirmation === 'حذف نهائي') {
+        try {
+            // مسح بيانات الموظفين
+            localStorage.removeItem('alamalarous_employees_data');
+            
+            // مسح النشاطات
+            localStorage.removeItem('alamalarous_activities');
+            
+            // مسح تاريخ النسخ الاحتياطية
+            localStorage.removeItem('alamalarous_last_backup');
+            
+            showNotification('تم مسح جميع البيانات', 'success');
+            
+            // إعادة تحميل الصفحة
+            setTimeout(() => {
+                location.reload();
+            }, 1500);
+            
+        } catch (error) {
+            console.error('خطأ في مسح البيانات:', error);
+            showNotification('حدث خطأ أثناء مسح البيانات', 'error');
+        }
+    } else if (confirmation !== null) {
+        showNotification('تم إلغاء العملية - النص المدخل غير صحيح', 'warning');
+    }
+}
+
+// إعادة تعيين للبيانات الافتراضية
+function resetToDefaults() {
+    if (confirm('هذا سيعيد جميع البيانات للحالة الافتراضية. هل أنت متأكد؟')) {
+        try {
+            // إعادة تعيين البيانات للافتراضية
+            dataStorage.saveData(defaultUsers);
+            
+            // مسح النشاطات القديمة
+            localStorage.removeItem('alamalarous_activities');
+            
+            // تحديث البيانات المحلية
+            users = dataStorage.getData();
+            
+            logActivity('إعادة تعيين', 'تم إعادة تعيين النظام للبيانات الافتراضية');
+            showNotification('تم إعادة التعيين للبيانات الافتراضية', 'success');
+            
+            // إعادة تحميل الصفحة
+            setTimeout(() => {
+                location.reload();
+            }, 1500);
+            
+        } catch (error) {
+            console.error('خطأ في إعادة التعيين:', error);
+            showNotification('حدث خطأ أثناء إعادة التعيين', 'error');
+        }
+    }
 }
 
 function saveChanges() {
