@@ -1,1368 +1,949 @@
-// User Database (في التطبيق الحقيقي سيكون في قاعدة البيانات)
-const users = {
-    'ebtsamsaleh': {
-        password: 'L987654r',
-        role: 'admin',
-        name: 'ابتسام صالح',
-        id: 'ADM001',
-        salary: 8500,
-        position: 'مديرة المشغل',
-        phone: '0501234567',
-        email: 'ebtisam@alamalarous.com',
-        joinDate: '2020-01-15',
-        address: 'الرياض، المملكة العربية السعودية'
-    },
-    'fatima_ahmed': {
-        password: 'emp123',
-        role: 'employee',
-        name: 'فاطمة أحمد',
-        id: 'EMP001',
-        salary: 4200,
-        position: 'أخصائية مكياج',
-        attendance: 24,
-        absences: 2,
-        delays: 1,
-        phone: '0507654321',
-        email: 'fatima@alamalarous.com',
-        joinDate: '2021-03-10',
-        address: 'الرياض، حي النخيل',
-        attendanceRecord: {
-            '2025-09-01': 'present',
-            '2025-09-02': 'present',
-            '2025-09-03': 'absent',
-            '2025-09-04': 'present',
-            '2025-09-05': 'present'
-        }
-    },
-    'nora_salem': {
-        password: 'emp456',
-        role: 'employee',
-        name: 'نورا سالم',
-        id: 'EMP002',
-        salary: 3800,
-        position: 'مصففة شعر',
-        attendance: 25,
-        absences: 1,
-        delays: 0,
-        phone: '0509876543',
-        email: 'nora@alamalarous.com',
-        joinDate: '2021-06-20',
-        address: 'الرياض، حي الملز',
-        attendanceRecord: {
-            '2025-09-01': 'present',
-            '2025-09-02': 'present',
-            '2025-09-03': 'present',
-            '2025-09-04': 'present',
-            '2025-09-05': 'present'
-        }
-    }
+// Firebase configuration and imports
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
+import { 
+  getFirestore,
+  collection,
+  addDoc,
+  getDocs,
+  updateDoc,
+  deleteDoc,
+  doc,
+  query,
+  where,
+  orderBy,
+  limit,
+  onSnapshot
+} from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
+import { 
+  getAuth,
+  signInWithEmailAndPassword,
+  signOut,
+  onAuthStateChanged 
+} from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js';
+
+// Firebase configuration
+const firebaseConfig = {
+  apiKey: "AIzaSyCxQ8R_NkXimalEX65g_OUy_RbNdQPQR3E",
+  authDomain: "a3lam-al3rous.firebaseapp.com",
+  projectId: "a3lam-al3rous",
+  storageBucket: "a3lam-al3rous.firebasestorage.app",
+  messagingSenderId: "748824722847",
+  appId: "1:748824722847:web:71b801e8622fddfe6151aa"
 };
 
-// Current user state
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+const auth = getAuth(app);
+
+// Enhanced Data Manager with Firebase
+class FirebaseDataManager {
+  constructor() {
+    this.collections = {
+      employees: 'employees',
+      attendance: 'attendance',
+      activities: 'activities',
+      settings: 'settings'
+    };
+    this.listeners = new Map();
+  }
+
+  // Employee Management
+  async addEmployee(employeeData) {
+    try {
+      const docRef = await addDoc(collection(db, this.collections.employees), {
+        ...employeeData,
+        createdAt: new Date(),
+        lastUpdated: new Date(),
+        isActive: true
+      });
+      
+      await this.logActivity('إضافة موظف', `تم إضافة موظف جديد: ${employeeData.name}`);
+      return { success: true, id: docRef.id };
+    } catch (error) {
+      console.error('Error adding employee:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  async getAllEmployees() {
+    try {
+      const q = query(
+        collection(db, this.collections.employees),
+        where('isActive', '==', true),
+        orderBy('createdAt', 'desc')
+      );
+      const querySnapshot = await getDocs(q);
+      const employees = [];
+      
+      querySnapshot.forEach((doc) => {
+        employees.push({
+          id: doc.id,
+          ...doc.data(),
+          createdAt: doc.data().createdAt?.toDate(),
+          lastUpdated: doc.data().lastUpdated?.toDate()
+        });
+      });
+      
+      return { success: true, data: employees };
+    } catch (error) {
+      console.error('Error fetching employees:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  async updateEmployee(employeeId, updateData) {
+    try {
+      const employeeRef = doc(db, this.collections.employees, employeeId);
+      await updateDoc(employeeRef, {
+        ...updateData,
+        lastUpdated: new Date()
+      });
+      
+      await this.logActivity('تحديث موظف', `تم تحديث بيانات موظف: ${updateData.name || 'غير محدد'}`);
+      return { success: true };
+    } catch (error) {
+      console.error('Error updating employee:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  async deleteEmployee(employeeId) {
+    try {
+      const employeeRef = doc(db, this.collections.employees, employeeId);
+      await updateDoc(employeeRef, { 
+        isActive: false,
+        deletedAt: new Date() 
+      });
+      
+      await this.logActivity('حذف موظف', 'تم حذف موظف من النظام');
+      return { success: true };
+    } catch (error) {
+      console.error('Error deleting employee:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // Attendance Management
+  async addAttendanceRecord(attendanceData) {
+    try {
+      const docRef = await addDoc(collection(db, this.collections.attendance), {
+        ...attendanceData,
+        timestamp: new Date(),
+        month: new Date().getMonth() + 1,
+        year: new Date().getFullYear()
+      });
+      
+      return { success: true, id: docRef.id };
+    } catch (error) {
+      console.error('Error adding attendance:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  async getEmployeeAttendance(employeeId, startDate, endDate) {
+    try {
+      let q = query(
+        collection(db, this.collections.attendance),
+        where('employeeId', '==', employeeId),
+        orderBy('date', 'desc')
+      );
+
+      if (startDate && endDate) {
+        q = query(q, 
+          where('date', '>=', startDate),
+          where('date', '<=', endDate)
+        );
+      }
+
+      const querySnapshot = await getDocs(q);
+      const attendance = [];
+      
+      querySnapshot.forEach((doc) => {
+        attendance.push({
+          id: doc.id,
+          ...doc.data(),
+          date: doc.data().date?.toDate(),
+          timestamp: doc.data().timestamp?.toDate()
+        });
+      });
+      
+      return { success: true, data: attendance };
+    } catch (error) {
+      console.error('Error fetching attendance:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  async updateAttendanceRecord(employeeId, date, status) {
+    try {
+      // Check if record exists
+      const q = query(
+        collection(db, this.collections.attendance),
+        where('employeeId', '==', employeeId),
+        where('date', '==', date)
+      );
+      
+      const querySnapshot = await getDocs(q);
+      
+      if (querySnapshot.empty) {
+        // Create new record
+        await this.addAttendanceRecord({
+          employeeId: employeeId,
+          date: date,
+          status: status
+        });
+      } else {
+        // Update existing record
+        const docRef = querySnapshot.docs[0].ref;
+        await updateDoc(docRef, {
+          status: status,
+          lastUpdated: new Date()
+        });
+      }
+      
+      return { success: true };
+    } catch (error) {
+      console.error('Error updating attendance:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // Activity Logging
+  async logActivity(type, description) {
+    try {
+      await addDoc(collection(db, this.collections.activities), {
+        type: type,
+        description: description,
+        user: currentUser?.name || 'نظام',
+        timestamp: new Date(),
+        date: new Date().toLocaleDateString('ar-SA')
+      });
+      return { success: true };
+    } catch (error) {
+      console.error('Error logging activity:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  async getRecentActivities(limitCount = 50) {
+    try {
+      const q = query(
+        collection(db, this.collections.activities),
+        orderBy('timestamp', 'desc'),
+        limit(limitCount)
+      );
+
+      const querySnapshot = await getDocs(q);
+      const activities = [];
+      
+      querySnapshot.forEach((doc) => {
+        activities.push({
+          id: doc.id,
+          ...doc.data(),
+          timestamp: doc.data().timestamp?.toDate()
+        });
+      });
+      
+      return { success: true, data: activities };
+    } catch (error) {
+      console.error('Error fetching activities:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // Real-time listeners
+  listenToEmployees(callback) {
+    const q = query(
+      collection(db, this.collections.employees),
+      where('isActive', '==', true),
+      orderBy('createdAt', 'desc')
+    );
+    
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const employees = [];
+      snapshot.forEach((doc) => {
+        employees.push({
+          id: doc.id,
+          ...doc.data(),
+          createdAt: doc.data().createdAt?.toDate(),
+          lastUpdated: doc.data().lastUpdated?.toDate()
+        });
+      });
+      callback(employees);
+    }, (error) => {
+      console.error('Error listening to employees:', error);
+    });
+    
+    this.listeners.set('employees', unsubscribe);
+    return unsubscribe;
+  }
+
+  listenToActivities(callback) {
+    const q = query(
+      collection(db, this.collections.activities),
+      orderBy('timestamp', 'desc'),
+      limit(20)
+    );
+    
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const activities = [];
+      snapshot.forEach((doc) => {
+        activities.push({
+          id: doc.id,
+          ...doc.data(),
+          timestamp: doc.data().timestamp?.toDate()
+        });
+      });
+      callback(activities);
+    });
+    
+    this.listeners.set('activities', unsubscribe);
+    return unsubscribe;
+  }
+
+  // Cleanup listeners
+  cleanup() {
+    this.listeners.forEach((unsubscribe) => {
+      if (typeof unsubscribe === 'function') {
+        unsubscribe();
+      }
+    });
+    this.listeners.clear();
+  }
+}
+
+// Initialize Firebase Data Manager
+const dataManager = new FirebaseDataManager();
+
+// Application State
 let currentUser = null;
 let currentEditingEmployee = null;
+let employeeCache = [];
+let activitiesCache = [];
 
-// Initialize app
+// Default users for fallback
+const defaultUsers = {
+  'ebtsamsaleh': {
+    password: 'L987654r',
+    role: 'admin',
+    name: 'ابتسام صالح',
+    id: 'ADM001',
+    salary: 8500,
+    position: 'مديرة المشغل',
+    phone: '0501234567',
+    email: 'ebtisam@alamalarous.com',
+    joinDate: '2020-01-15',
+    address: 'الرياض، المملكة العربية السعودية'
+  },
+  'fatima_ahmed': {
+    password: 'emp123',
+    role: 'employee',
+    name: 'فاطمة أحمد',
+    id: 'EMP001',
+    salary: 4200,
+    position: 'أخصائية مكياج',
+    attendance: 24,
+    absences: 2,
+    delays: 1,
+    phone: '0507654321',
+    email: 'fatima@alamalarous.com',
+    joinDate: '2021-03-10',
+    address: 'الرياض، حي النخيل'
+  },
+  'nora_salem': {
+    password: 'emp456',
+    role: 'employee',
+    name: 'نورا سالم',
+    id: 'EMP002',
+    salary: 3800,
+    position: 'مصففة شعر',
+    attendance: 25,
+    absences: 1,
+    delays: 0,
+    phone: '0509876543',
+    email: 'nora@alamalarous.com',
+    joinDate: '2021-06-20',
+    address: 'الرياض، حي الملز'
+  }
+};
+
+// Initialize app when DOM is loaded
 document.addEventListener('DOMContentLoaded', function() {
-    setupLoginForm();
+  setupLoginForm();
+  initializeFirebaseListeners();
 });
 
-// Setup login form
-function setupLoginForm() {
-    const loginForm = document.getElementById('loginForm');
-    loginForm.addEventListener('submit', handleLogin);
+// Firebase Authentication State Listener
+onAuthStateChanged(auth, (user) => {
+  if (user) {
+    console.log('User authenticated:', user.email);
+  } else {
+    console.log('User not authenticated');
+  }
+});
+
+// Initialize real-time listeners
+function initializeFirebaseListeners() {
+  // Listen to employee changes
+  dataManager.listenToEmployees((employees) => {
+    employeeCache = employees;
+    if (currentUser && currentUser.role === 'admin') {
+      updateEmployeeGrid();
+    }
+  });
+
+  // Listen to activity changes
+  dataManager.listenToActivities((activities) => {
+    activitiesCache = activities;
+    if (currentUser && currentUser.role === 'admin') {
+      displayRecentActivities();
+    }
+  });
 }
 
-// Handle login
-async function handleLogin(event) {
-    event.preventDefault();
-    
-    const username = document.getElementById('username').value.trim();
-    const password = document.getElementById('password').value;
-    const loginBtn = document.getElementById('loginBtn');
+// Enhanced Login System
+function setupLoginForm() {
+  const loginForm = document.getElementById('loginForm');
+  if (loginForm) {
+    loginForm.addEventListener('submit', handleLogin);
+  }
+}
 
-    // Show loading state
+async function handleLogin(event) {
+  event.preventDefault();
+  
+  const username = document.getElementById('username')?.value.trim();
+  const password = document.getElementById('password')?.value;
+  const loginBtn = document.getElementById('loginBtn');
+
+  if (!username || !password) {
+    showNotification('يرجى إدخال اسم المستخدم وكلمة المرور', 'error');
+    return;
+  }
+
+  // Show loading state with enhanced animation
+  if (loginBtn) {
     loginBtn.textContent = 'جاري التحقق...';
     loginBtn.disabled = true;
+    loginBtn.classList.add('loading');
+  }
 
-    // Simulate API call
+  try {
+    // Simulate API call delay
     await new Promise(resolve => setTimeout(resolve, 1500));
 
-    const user = users[username];
+    // Check default users (in production, this would be Firebase Auth)
+    const user = defaultUsers[username];
     
     if (user && user.password === password) {
-        currentUser = { username, ...user };
-        showDashboard();
-        showNotification(`مرحباً ${user.name}! تم تسجيل الدخول بنجاح`, 'success');
+      currentUser = { username, ...user };
+      
+      // Log login activity
+      await dataManager.logActivity('تسجيل دخول', `${user.name} قام بتسجيل الدخول للنظام`);
+      
+      showDashboard();
+      showNotification(`مرحباً ${user.name}! تم تسجيل الدخول بنجاح`, 'success');
     } else {
-        showNotification('اسم المستخدم أو كلمة المرور غير صحيحة', 'error');
-        loginBtn.textContent = 'تسجيل الدخول';
-        loginBtn.disabled = false;
+      showNotification('اسم المستخدم أو كلمة المرور غير صحيحة', 'error');
     }
+  } catch (error) {
+    console.error('Login error:', error);
+    showNotification('حدث خطأ في تسجيل الدخول', 'error');
+  } finally {
+    if (loginBtn) {
+      loginBtn.textContent = 'تسجيل الدخول';
+      loginBtn.disabled = false;
+      loginBtn.classList.remove('loading');
+    }
+  }
 }
 
-// Show dashboard
+// Enhanced Dashboard Display
 function showDashboard() {
-    document.getElementById('loginScreen').style.display = 'none';
-    document.getElementById('dashboard').style.display = 'block';
-    
-    setupUserInfo();
-    setupNavigation();
-    setupContent();
+  const loginScreen = document.getElementById('loginScreen');
+  const dashboard = document.getElementById('dashboard');
+  
+  if (loginScreen) loginScreen.style.display = 'none';
+  if (dashboard) {
+    dashboard.style.display = 'block';
+    dashboard.style.animation = 'fadeIn 0.6s ease-out';
+  }
+  
+  setupUserInfo();
+  setupNavigation();
+  setupContent();
 }
 
-// Setup user info in header
+// Enhanced User Info Setup
 function setupUserInfo() {
-    document.getElementById('userName').textContent = currentUser.name;
-    document.getElementById('userRole').textContent = currentUser.role === 'admin' ? 'مديرة النظام' : currentUser.position;
-    
-    const avatar = document.getElementById('userAvatar');
+  const userName = document.getElementById('userName');
+  const userRole = document.getElementById('userRole');
+  const userAvatar = document.getElementById('userAvatar');
+  
+  if (userName) userName.textContent = currentUser.name;
+  if (userRole) {
+    userRole.textContent = currentUser.role === 'admin' ? 'مديرة النظام' : currentUser.position;
+  }
+  
+  if (userAvatar) {
     if (currentUser.role === 'admin') {
-        avatar.textContent = '👑';
-        avatar.style.background = 'linear-gradient(135deg, #ffd700, #ffed4a)';
+      userAvatar.textContent = '👑';
+      userAvatar.style.background = 'linear-gradient(135deg, #f59e0b, #d97706)';
     } else {
-        avatar.textContent = currentUser.name.charAt(0);
+      userAvatar.textContent = currentUser.name.charAt(0);
+      userAvatar.style.background = 'linear-gradient(135deg, #6366f1, #4338ca)';
     }
+  }
 }
 
-// Setup navigation based on user role
+// Enhanced Navigation Setup
 function setupNavigation() {
-    const navMenu = document.getElementById('navigationMenu');
-    navMenu.innerHTML = '';
+  const navMenu = document.getElementById('navigationMenu');
+  if (!navMenu) return;
+  
+  navMenu.innerHTML = '';
 
-    let navItems = [];
+  let navItems = [];
 
-    if (currentUser.role === 'admin') {
-        navItems = [
-            { id: 'overview', icon: '📊', text: 'نظرة عامة' },
-            { id: 'employees', icon: '👥', text: 'إدارة الموظفين' },
-            { id: 'attendance', icon: '📅', text: 'إدارة الحضور' },
-            { id: 'salary', icon: '💰', text: 'إدارة الرواتب' },
-            { id: 'schedule', icon: '📋', text: 'جدول العمل' },
-            { id: 'reports', icon: '📈', text: 'التقارير المتقدمة' }
-        ];
-    } else {
-        navItems = [
-            { id: 'attendance', icon: '📅', text: 'حضوري وغيابي' },
-            { id: 'salary', icon: '💰', text: 'راتبي ومستحقاتي' },
-            { id: 'schedule', icon: '📋', text: 'جدولي اليومي' },
-            { id: 'reports', icon: '📈', text: 'تقارير أدائي' }
-        ];
-    }
+  if (currentUser.role === 'admin') {
+    navItems = [
+      { id: 'overview', icon: '📊', text: 'نظرة عامة' },
+      { id: 'employees', icon: '👥', text: 'إدارة الموظفين' },
+      { id: 'attendance', icon: '📅', text: 'إدارة الحضور' },
+      { id: 'salary', icon: '💰', text: 'إدارة الرواتب' },
+      { id: 'schedule', icon: '📋', text: 'جدول العمل' },
+      { id: 'reports', icon: '📈', text: 'التقارير المتقدمة' }
+    ];
+  } else {
+    navItems = [
+      { id: 'attendance', icon: '📅', text: 'حضوري وغيابي' },
+      { id: 'salary', icon: '💰', text: 'راتبي ومستحقاتي' },
+      { id: 'schedule', icon: '📋', text: 'جدولي اليومي' },
+      { id: 'reports', icon: '📈', text: 'تقارير أدائي' }
+    ];
+  }
 
-    navItems.forEach((item, index) => {
-        const navItem = document.createElement('button');
-        navItem.className = `nav-item ${index === 0 ? 'active' : ''}`;
-        navItem.innerHTML = `<span class="icon">${item.icon}</span> ${item.text}`;
-        navItem.setAttribute('data-tab', item.id);
-        navItem.onclick = () => showTab(item.id);
-        navMenu.appendChild(navItem);
-    });
+  navItems.forEach((item, index) => {
+    const navItem = document.createElement('button');
+    navItem.className = `nav-item ${index === 0 ? 'active' : ''}`;
+    navItem.innerHTML = `<span class="icon">${item.icon}</span> ${item.text}`;
+    navItem.setAttribute('data-tab', item.id);
+    navItem.onclick = () => showTab(item.id);
+    navMenu.appendChild(navItem);
+  });
 
-    // Show first tab
+  // Show first tab
+  if (navItems.length > 0) {
     showTab(navItems[0].id);
+  }
 }
 
-// Setup content based on user role
-function setupContent() {
-    if (currentUser.role === 'employee') {
-        setupEmployeeContent();
-    } else {
-        setupAdminContent();
-    }
-}
-
-// Setup employee-specific content
-function setupEmployeeContent() {
-    // Hide admin-only tabs
-    document.getElementById('overview').style.display = 'none';
-    document.getElementById('employees').style.display = 'none';
-    
-    // Update attendance title
-    document.getElementById('attendanceTitle').textContent = 'حضوري وغيابي';
-    
-    // Setup employee attendance stats
-    const attendanceStats = document.getElementById('attendanceStats');
-    attendanceStats.innerHTML = `
-        <div class="stat-card">
-            <span class="stat-icon">✅</span>
-            <span class="stat-value">${currentUser.attendance}</span>
-            <span class="stat-label">أيام الحضور</span>
-        </div>
-        <div class="stat-card">
-            <span class="stat-icon">❌</span>
-            <span class="stat-value">${currentUser.absences}</span>
-            <span class="stat-label">أيام الغياب</span>
-        </div>
-        <div class="stat-card">
-            <span class="stat-icon">⏰</span>
-            <span class="stat-value">${currentUser.delays}</span>
-            <span class="stat-label">مرات التأخير</span>
-        </div>
-        <div class="stat-card">
-            <span class="stat-icon">📊</span>
-            <span class="stat-value">${Math.round((currentUser.attendance / (currentUser.attendance + currentUser.absences)) * 100)}%</span>
-            <span class="stat-label">نسبة الحضور</span>
-        </div>
-    `;
-
-    // Setup employee salary content
-    const salaryContent = document.getElementById('salaryContent');
-    const basicSalary = currentUser.salary;
-    const allowances = 500;
-    const deductions = currentUser.absences * (basicSalary / 30);
-    const totalSalary = basicSalary + allowances - deductions;
-
-    salaryContent.innerHTML = `
-        <div class="simple-table">
-            <div class="table-header">تفاصيل الراتب الشهري - سبتمبر 2025</div>
-            <div class="table-row">
-                <span class="row-label">الراتب الأساسي</span>
-                <span class="row-value positive">${basicSalary.toLocaleString()} ريال</span>
-            </div>
-            <div class="table-row">
-                <span class="row-label">البدلات والحوافز</span>
-                <span class="row-value positive">${allowances} ريال</span>
-            </div>
-            <div class="table-row">
-                <span class="row-label">خصم الغياب</span>
-                <span class="row-value negative">-${Math.round(deductions)} ريال</span>
-            </div>
-            <div class="table-row" style="border-top: 2px solid var(--primary-gold); font-weight: 700; font-size: 1.1rem;">
-                <span class="row-label">إجمالي الراتب</span>
-                <span class="row-value" style="color: var(--primary-gold);">${Math.round(totalSalary).toLocaleString()} ريال</span>
-            </div>
-        </div>
-        <br>
-        <div class="simple-table">
-            <div class="table-header">سجل المدفوعات</div>
-            <div class="table-row">
-                <span class="row-label">30 أغسطس 2025</span>
-                <span class="row-value positive">${(totalSalary - 150).toLocaleString()} ريال</span>
-            </div>
-            <div class="table-row">
-                <span class="row-label">30 يوليو 2025</span>
-                <span class="row-value positive">${totalSalary.toLocaleString()} ريال</span>
-            </div>
-        </div>
-    `;
-
-    // Setup employee reports
-    const reportsContent = document.getElementById('reportsContent');
-    reportsContent.innerHTML = `
-        <div class="stats-container">
-            <div class="stat-card">
-                <span class="stat-icon">👥</span>
-                <span class="stat-value">89</span>
-                <span class="stat-label">العملاء المخدومين</span>
-            </div>
-            <div class="stat-card">
-                <span class="stat-icon">⭐</span>
-                <span class="stat-value">4.8</span>
-                <span class="stat-label">تقييم العملاء</span>
-            </div>
-            <div class="stat-card">
-                <span class="stat-icon">💰</span>
-                <span class="stat-value">12,500</span>
-                <span class="stat-label">إجمالي المبيعات (ريال)</span>
-            </div>
-            <div class="stat-card">
-                <span class="stat-icon">🏆</span>
-                <span class="stat-value">95%</span>
-                <span class="stat-label">نسبة الأداء</span>
-            </div>
-        </div>
-        <div class="simple-table">
-            <div class="table-header">ملخص الأداء الشهري</div>
-            <div class="table-row">
-                <span class="row-label">عدد العملاء الجدد</span>
-                <span class="row-value positive">23</span>
-            </div>
-            <div class="table-row">
-                <span class="row-label">متوسط قيمة الخدمة</span>
-                <span class="row-value">140 ريال</span>
-            </div>
-            <div class="table-row">
-                <span class="row-label">نسبة رضا العملاء</span>
-                <span class="row-value positive">96%</span>
-            </div>
-        </div>
-    `;
-}
-
-// Setup admin-specific content
-function setupAdminContent() {
-    // Update titles for admin view
-    document.getElementById('attendanceTitle').textContent = 'إدارة الحضور';
-    document.getElementById('salaryTitle').textContent = 'إدارة الرواتب';
-    
-    // Setup admin attendance stats (all employees)
-    const attendanceStats = document.getElementById('attendanceStats');
-    attendanceStats.innerHTML = `
-        <div class="stat-card">
-            <span class="stat-icon">✅</span>
-            <span class="stat-value">95%</span>
-            <span class="stat-label">متوسط الحضور</span>
-        </div>
-        <div class="stat-card">
-            <span class="stat-icon">❌</span>
-            <span class="stat-value">3</span>
-            <span class="stat-label">إجمالي الغيابات</span>
-        </div>
-        <div class="stat-card">
-            <span class="stat-icon">⏰</span>
-            <span class="stat-value">1</span>
-            <span class="stat-label">التأخيرات</span>
-        </div>
-        <div class="stat-card">
-            <span class="stat-icon">👥</span>
-            <span class="stat-value">12</span>
-            <span class="stat-label">الموظفين النشطين</span>
-        </div>
-    `;
-
-    // Setup admin salary management
-    const salaryContent = document.getElementById('salaryContent');
-    salaryContent.innerHTML = `
-        <div class="stats-container">
-            <div class="stat-card">
-                <span class="stat-icon">💰</span>
-                <span class="stat-value">54,200</span>
-                <span class="stat-label">إجمالي الرواتب (ريال)</span>
-            </div>
-            <div class="stat-card">
-                <span class="stat-icon">➕</span>
-                <span class="stat-value">6,500</span>
-                <span class="stat-label">البدلات والحوافز (ريال)</span>
-            </div>
-            <div class="stat-card">
-                <span class="stat-icon">➖</span>
-                <span class="stat-value">1,200</span>
-                <span class="stat-label">إجمالي الخصومات (ريال)</span>
-            </div>
-            <div class="stat-card">
-                <span class="stat-icon">📊</span>
-                <span class="stat-value">59,500</span>
-                <span class="stat-label">الإجمالي النهائي (ريال)</span>
-            </div>
-        </div>
-        <div style="text-align: center; margin: 30px 0;">
-            <button class="btn btn-primary" onclick="manageSalaries()">
-                <span>⚙️</span> إدارة رواتب الموظفين
-            </button>
-            <button class="btn btn-success" onclick="generatePayroll()">
-                <span>📄</span> إنشاء كشف المرتبات
-            </button>
-        </div>
-        <div class="simple-table">
-            <div class="table-header">ملخص رواتب الموظفين</div>
-            <div class="table-row">
-                <span class="row-label">فاطمة أحمد - أخصائية مكياج</span>
-                <span class="row-value">4,650 ريال</span>
-            </div>
-            <div class="table-row">
-                <span class="row-label">نورا سالم - مصففة شعر</span>
-                <span class="row-value">3,800 ريال</span>
-            </div>
-            <div class="table-row">
-                <span class="row-label">سارة محمد - أخصائية بشرة</span>
-                <span class="row-value">3,900 ريال</span>
-            </div>
-        </div>
-    `;
-
-    // Setup employee grid
-    setupEmployeeGrid();
-
-    // Setup admin reports
-    const reportsContent = document.getElementById('reportsContent');
-    reportsContent.innerHTML = `
-        <div class="stats-container">
-            <div class="stat-card">
-                <span class="stat-icon">📈</span>
-                <span class="stat-value">+15.2%</span>
-                <span class="stat-label">نمو الإيرادات</span>
-            </div>
-            <div class="stat-card">
-                <span class="stat-icon">👥</span>
-                <span class="stat-value">+23</span>
-                <span class="stat-label">عملاء جدد</span>
-            </div>
-            <div class="stat-card">
-                <span class="stat-icon">⭐</span>
-                <span class="stat-value">4.9</span>
-                <span class="stat-label">متوسط التقييمات</span>
-            </div>
-            <div class="stat-card">
-                <span class="stat-icon">📊</span>
-                <span class="stat-value">92%</span>
-                <span class="stat-label">نسبة رضا العملاء</span>
-            </div>
-        </div>
-        <div style="text-align: center; margin: 30px 0;">
-            <button class="btn btn-primary" onclick="generateMonthlyReport()">
-                <span>📋</span> تقرير شهري شامل
-            </button>
-            <button class="btn btn-primary" onclick="generateFinancialReport()">
-                <span>💰</span> التقرير المالي
-            </button>
-        </div>
-        <div class="simple-table">
-            <div class="table-header">أداء الموظفين</div>
-            <div class="table-row">
-                <span class="row-label">فاطمة أحمد</span>
-                <span class="row-value positive">ممتاز (96%)</span>
-            </div>
-            <div class="table-row">
-                <span class="row-label">نورا سالم</span>
-                <span class="row-value positive">ممتاز (98%)</span>
-            </div>
-            <div class="table-row">
-                <span class="row-label">سارة محمد</span>
-                <span class="row-value positive">جيد جداً (89%)</span>
-            </div>
-        </div>
-    `;
-}
-
-// Setup employee grid for admin
-function setupEmployeeGrid() {
-    const employeeGrid = document.getElementById('employeeGrid');
-    employeeGrid.innerHTML = '';
-
-    Object.entries(users).forEach(([username, user]) => {
-        if (user.role === 'employee') {
-            const employeeCard = createEmployeeCard(user);
-            employeeGrid.appendChild(employeeCard);
-        }
-    });
-}
-
-// Create employee card
-function createEmployeeCard(user) {
-    const card = document.createElement('div');
-    card.className = 'employee-card';
-    
-    const initials = user.name.split(' ').map(n => n.charAt(0)).join('').substring(0, 2);
-    const attendanceRate = user.attendance ? Math.round((user.attendance / (user.attendance + user.absences)) * 100) : 100;
-    
-    card.innerHTML = `
-        <div class="employee-header">
-            <div class="employee-avatar">${initials}</div>
-            <div class="employee-info">
-                <h4>${user.name}</h4>
-                <p>${user.position}</p>
-                <span style="font-size: 0.8rem; color: var(--primary-gold); font-weight: 600;">${user.id}</span>
-            </div>
-        </div>
-        <div class="employee-stats">
-            <div class="employee-stat">
-                <span class="value">${user.salary.toLocaleString()}</span>
-                <span class="label">الراتب (ريال)</span>
-            </div>
-            <div class="employee-stat">
-                <span class="value">${attendanceRate}%</span>
-                <span class="label">نسبة الحضور</span>
-            </div>
-        </div>
-        <div class="employee-actions">
-            <button class="btn btn-primary btn-sm" onclick="editEmployee('${user.id}')">
-                <span>✏️</span> تعديل
-            </button>
-            <button class="btn btn-success btn-sm" onclick="manageSalary('${user.id}')">
-                <span>💰</span> الراتب
-            </button>
-            <button class="btn btn-danger btn-sm" onclick="manageAttendance('${user.id}')">
-                <span>📅</span> الحضور
-            </button>
-        </div>
-    `;
-    
-    return card;
-}
-
-// Generate calendar
-function generateCalendar() {
-    const calendarGrid = document.getElementById('calendarGrid');
-    calendarGrid.innerHTML = '';
-    
-    // Sample calendar data for September 2025
-    const daysInMonth = 30;
-    const startDay = 1; // Monday
-    
-    // Add empty cells for days before month start
-    for (let i = 0; i < startDay; i++) {
-        const emptyDay = document.createElement('div');
-        emptyDay.className = 'calendar-day';
-        calendarGrid.appendChild(emptyDay);
-    }
-    
-    // Add days of the month
-    for (let day = 1; day <= daysInMonth; day++) {
-        const dayElement = document.createElement('div');
-        dayElement.className = 'calendar-day';
-        dayElement.textContent = day;
-        
-        // Sample attendance data
-        if (day === 2) {
-            dayElement.classList.add('today');
-            dayElement.classList.add('present');
-        } else if ([6, 7, 13, 14, 20, 21, 27, 28].includes(day)) {
-            dayElement.classList.add('weekend');
-        } else if ([3, 15].includes(day)) {
-            dayElement.classList.add('absent');
-        } else if (day < 2) {
-            dayElement.classList.add('present');
-        }
-        
-        calendarGrid.appendChild(dayElement);
-    }
-}
-
-// Show tab function
+// Enhanced Tab Management
 function showTab(tabId) {
-    // Hide all tabs
-    document.querySelectorAll('.tab-content').forEach(tab => {
+  // Hide all tabs with animation
+  document.querySelectorAll('.tab-content').forEach(tab => {
+    if (tab.classList.contains('active')) {
+      tab.style.animation = 'fadeOut 0.3s ease-out';
+      setTimeout(() => {
         tab.classList.remove('active');
-    });
-    
-    // Remove active class from all nav items
-    document.querySelectorAll('.nav-item').forEach(item => {
-        item.classList.remove('active');
-    });
-    
-    // Show selected tab
+        tab.style.animation = '';
+      }, 300);
+    }
+  });
+  
+  // Remove active class from nav items
+  document.querySelectorAll('.nav-item').forEach(item => {
+    item.classList.remove('active');
+  });
+  
+  // Show selected tab with animation
+  setTimeout(() => {
     const selectedTab = document.getElementById(tabId);
     if (selectedTab) {
-        selectedTab.classList.add('active');
+      selectedTab.classList.add('active');
+      selectedTab.style.animation = 'slideInContent 0.5s ease-out';
     }
     
-    // Add active class to the correct nav item
     const selectedNavItem = document.querySelector(`[data-tab="${tabId}"]`);
     if (selectedNavItem) {
-        selectedNavItem.classList.add('active');
+      selectedNavItem.classList.add('active');
     }
-    
-    // Generate calendar if attendance tab is shown
-    if (tabId === 'attendance') {
-        setTimeout(generateCalendar, 100);
-    }
+  }, 300);
+  
+  // Special tab handling
+  if (tabId === 'attendance') {
+    setTimeout(() => generateCalendar(), 400);
+  }
+  
+  if (tabId === 'employees' && currentUser.role === 'admin') {
+    setTimeout(() => updateEmployeeGrid(), 400);
+  }
 }
 
-// Modal functions
+// Enhanced Content Setup
+function setupContent() {
+  if (currentUser.role === 'employee') {
+    setupEmployeeContent();
+  } else {
+    setupAdminContent();
+  }
+}
+
+// Enhanced Employee Content
+function setupEmployeeContent() {
+  // Hide admin-only tabs
+  const adminTabs = ['overview', 'employees'];
+  adminTabs.forEach(tabId => {
+    const tab = document.getElementById(tabId);
+    if (tab) tab.style.display = 'none';
+  });
+  
+  setupEmployeeAttendance();
+  setupEmployeeSalary();
+  setupEmployeeReports();
+}
+
+function setupEmployeeAttendance() {
+  const attendanceTitle = document.getElementById('attendanceTitle');
+  const attendanceStats = document.getElementById('attendanceStats');
+  
+  if (attendanceTitle) {
+    attendanceTitle.textContent = 'حضوري وغيابي';
+  }
+  
+  if (attendanceStats) {
+    const attendanceRate = Math.round((currentUser.attendance / (currentUser.attendance + currentUser.absences)) * 100);
+    
+    attendanceStats.innerHTML = `
+      <div class="stat-card" data-aos="fade-up" data-aos-delay="100">
+        <span class="stat-icon">✅</span>
+        <span class="stat-value">${currentUser.attendance}</span>
+        <span class="stat-label">أيام الحضور</span>
+      </div>
+      <div class="stat-card" data-aos="fade-up" data-aos-delay="200">
+        <span class="stat-icon">❌</span>
+        <span class="stat-value">${currentUser.absences}</span>
+        <span class="stat-label">أيام الغياب</span>
+      </div>
+      <div class="stat-card" data-aos="fade-up" data-aos-delay="300">
+        <span class="stat-icon">⏰</span>
+        <span class="stat-value">${currentUser.delays}</span>
+        <span class="stat-label">مرات التأخير</span>
+      </div>
+      <div class="stat-card" data-aos="fade-up" data-aos-delay="400">
+        <span class="stat-icon">📊</span>
+        <span class="stat-value">${attendanceRate}%</span>
+        <span class="stat-label">نسبة الحضور</span>
+      </div>
+    `;
+  }
+}
+
+// Enhanced Admin Content
+async function setupAdminContent() {
+  setupAdminStats();
+  await loadEmployeesData();
+  setupAdminReports();
+}
+
+async function loadEmployeesData() {
+  try {
+    const result = await dataManager.getAllEmployees();
+    if (result.success) {
+      employeeCache = result.data;
+      updateEmployeeGrid();
+    }
+  } catch (error) {
+    console.error('Error loading employees:', error);
+  }
+}
+
+function updateEmployeeGrid() {
+  const employeeGrid = document.getElementById('employeeGrid');
+  if (!employeeGrid) return;
+  
+  employeeGrid.innerHTML = '';
+  
+  if (employeeCache.length === 0) {
+    employeeGrid.innerHTML = `
+      <div style="grid-column: 1/-1; text-align: center; padding: 3rem;">
+        <div style="font-size: 3rem; margin-bottom: 1rem;">👥</div>
+        <h3 style="color: var(--text-secondary); margin-bottom: 1rem;">لا توجد موظفين</h3>
+        <button class="btn btn-primary" onclick="showAddEmployeeForm()">
+          <span>➕</span> إضافة أول موظف
+        </button>
+      </div>
+    `;
+    return;
+  }
+
+  employeeCache.forEach((employee, index) => {
+    const employeeCard = createEnhancedEmployeeCard(employee, index);
+    employeeGrid.appendChild(employeeCard);
+  });
+}
+
+function createEnhancedEmployeeCard(employee, index) {
+  const card = document.createElement('div');
+  card.className = 'employee-card';
+  card.style.animation = `slideInUp 0.6s ease-out ${index * 0.1}s both`;
+  
+  const initials = employee.name.split(' ').map(n => n.charAt(0)).join('').substring(0, 2);
+  const attendanceRate = employee.attendance ? 
+    Math.round((employee.attendance / (employee.attendance + employee.absences)) * 100) : 100;
+  
+  card.innerHTML = `
+    <div class="employee-header">
+      <div class="employee-avatar">${initials}</div>
+      <div class="employee-info">
+        <h4>${employee.name}</h4>
+        <p>${employee.position}</p>
+        <span style="font-size: 0.8rem; color: var(--primary-purple); font-weight: 600;">${employee.id || 'ID غير محدد'}</span>
+      </div>
+    </div>
+    <div class="employee-stats">
+      <div class="employee-stat">
+        <span class="value">${employee.salary?.toLocaleString() || '0'}</span>
+        <span class="label">الراتب (ريال)</span>
+      </div>
+      <div class="employee-stat">
+        <span class="value">${attendanceRate}%</span>
+        <span class="label">نسبة الحضور</span>
+      </div>
+    </div>
+    <div class="employee-actions">
+      <button class="btn btn-primary btn-sm" onclick="editEmployee('${employee.id}')">
+        <span>✏️</span> تعديل
+      </button>
+      <button class="btn btn-success btn-sm" onclick="manageSalary('${employee.id}')">
+        <span>💰</span> الراتب
+      </button>
+      <button class="btn btn-danger btn-sm" onclick="manageAttendance('${employee.id}')">
+        <span>📅</span> الحضور
+      </button>
+    </div>
+  `;
+  
+  return card;
+}
+
+// Enhanced Notification System
+function showNotification(message, type = 'success', duration = 4000) {
+  // Remove existing notification if any
+  const existingNotification = document.querySelector('.notification');
+  if (existingNotification) {
+    existingNotification.remove();
+  }
+
+  const notification = document.createElement('div');
+  notification.className = `notification ${type}`;
+  notification.innerHTML = `
+    <div style="display: flex; align-items: center; gap: 0.75rem;">
+      <span style="font-size: 1.25rem;">
+        ${type === 'success' ? '✅' : type === 'error' ? '❌' : type === 'warning' ? '⚠️' : 'ℹ️'}
+      </span>
+      <span>${message}</span>
+    </div>
+  `;
+  
+  document.body.appendChild(notification);
+  
+  // Auto-remove after duration
+  setTimeout(() => {
+    if (notification.parentNode) {
+      notification.style.animation = 'notificationFadeOut 0.4s ease-out forwards';
+      setTimeout(() => {
+        if (notification.parentNode) {
+          notification.parentNode.removeChild(notification);
+        }
+      }, 400);
+    }
+  }, duration);
+}
+
+// Enhanced Modal Functions
 function openModal() {
-    document.getElementById('employeeModal').style.display = 'block';
-    document.getElementById('modalOverlay').style.display = 'block';
+  const modal = document.getElementById('employeeModal');
+  const overlay = document.getElementById('modalOverlay');
+  
+  if (modal && overlay) {
+    modal.style.display = 'block';
+    overlay.style.display = 'block';
     document.body.style.overflow = 'hidden';
+    
+    // Animate modal
+    setTimeout(() => {
+      modal.style.animation = 'modalSlideIn 0.4s ease-out';
+      overlay.style.animation = 'fadeIn 0.3s ease-out';
+    }, 10);
+  }
 }
 
 function closeModal() {
-    document.getElementById('employeeModal').style.display = 'none';
-    document.getElementById('modalOverlay').style.display = 'none';
-    document.body.style.overflow = 'auto';
-    currentEditingEmployee = null;
-}
-
-// Find employee by ID
-function findEmployeeById(employeeId) {
-    for (let [username, user] of Object.entries(users)) {
-        if (user.id === employeeId) {
-            return { username, ...user };
-        }
-    }
-    return null;
-}
-
-// Admin functions - تم تحسينها للعمل فعلياً
-function showAddEmployeeForm() {
-    document.getElementById('modalTitle').textContent = 'إضافة موظف جديد';
-    document.getElementById('modalBody').innerHTML = `
-        <form id="addEmployeeForm">
-            <div class="modal-form-row">
-                <div class="modal-form-group">
-                    <label for="employeeName">اسم الموظف *</label>
-                    <input type="text" id="employeeName" required placeholder="أدخل اسم الموظف">
-                </div>
-                <div class="modal-form-group">
-                    <label for="employeePosition">المنصب *</label>
-                    <select id="employeePosition" required>
-                        <option value="">اختر المنصب</option>
-                        <option value="أخصائية مكياج">أخصائية مكياج</option>
-                        <option value="مصففة شعر">مصففة شعر</option>
-                        <option value="أخصائية بشرة">أخصائية بشرة</option>
-                        <option value="أخصائية أظافر">أخصائية أظافر</option>
-                        <option value="مساعدة إدارية">مساعدة إدارية</option>
-                    </select>
-                </div>
-            </div>
-            <div class="modal-form-row">
-                <div class="modal-form-group">
-                    <label for="employeeSalary">الراتب الأساسي *</label>
-                    <input type="number" id="employeeSalary" required placeholder="مثال: 4000">
-                </div>
-                <div class="modal-form-group">
-                    <label for="employeePhone">رقم الهاتف *</label>
-                    <input type="tel" id="employeePhone" required placeholder="مثال: 0501234567">
-                </div>
-            </div>
-            <div class="modal-form-row">
-                <div class="modal-form-group">
-                    <label for="employeeEmail">البريد الإلكتروني</label>
-                    <input type="email" id="employeeEmail" placeholder="مثال: name@alamalarous.com">
-                </div>
-                <div class="modal-form-group">
-                    <label for="employeeJoinDate">تاريخ التوظيف</label>
-                    <input type="date" id="employeeJoinDate" value="${new Date().toISOString().split('T')[0]}">
-                </div>
-            </div>
-            <div class="modal-form-group">
-                <label for="employeeAddress">العنوان</label>
-                <textarea id="employeeAddress" placeholder="أدخل عنوان الموظف"></textarea>
-            </div>
-        </form>
-    `;
+  const modal = document.getElementById('employeeModal');
+  const overlay = document.getElementById('modalOverlay');
+  
+  if (modal && overlay) {
+    modal.style.animation = 'modalSlideOut 0.4s ease-out';
+    overlay.style.animation = 'fadeOut 0.3s ease-out';
     
-    document.getElementById('saveBtn').onclick = saveNewEmployee;
-    openModal();
+    setTimeout(() => {
+      modal.style.display = 'none';
+      overlay.style.display = 'none';
+      document.body.style.overflow = 'auto';
+    }, 400);
+  }
+  
+  currentEditingEmployee = null;
+}
+
+// Enhanced Logout
+async function logout() {
+  if (confirm('هل أنت متأكد من تسجيل الخروج؟')) {
+    try {
+      // Log logout activity
+      if (currentUser) {
+        await dataManager.logActivity('تسجيل خروج', `${currentUser.name} قام بتسجيل الخروج من النظام`);
+      }
+      
+      // Cleanup listeners
+      dataManager.cleanup();
+      
+      // Reset state
+      currentUser = null;
+      employeeCache = [];
+      activitiesCache = [];
+      
+      // Show login screen
+      const dashboard = document.getElementById('dashboard');
+      const loginScreen = document.getElementById('loginScreen');
+      
+      if (dashboard) {
+        dashboard.style.animation = 'fadeOut 0.5s ease-out';
+        setTimeout(() => {
+          dashboard.style.display = 'none';
+        }, 500);
+      }
+      
+      if (loginScreen) {
+        setTimeout(() => {
+          loginScreen.style.display = 'flex';
+          loginScreen.style.animation = 'fadeIn 0.5s ease-out';
+        }, 500);
+      }
+      
+      // Reset login form
+      const loginForm = document.getElementById('loginForm');
+      if (loginForm) {
+        loginForm.reset();
+      }
+      
+      showNotification('تم تسجيل الخروج بنجاح', 'success');
+    } catch (error) {
+      console.error('Logout error:', error);
+      showNotification('حدث خطأ أثناء تسجيل الخروج', 'error');
+    }
+  }
+}
+
+// Add CSS animations for enhanced effects
+const additionalStyles = `
+@keyframes slideInUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes modalSlideOut {
+  from {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translate(-50%, -60%) scale(0.9);
+  }
+}
+
+.loading::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 20px;
+  height: 20px;
+  margin: -10px 0 0 -10px;
+  border: 2px solid transparent;
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+`;
+
+// Add styles to document
+const styleSheet = document.createElement('style');
+styleSheet.textContent = additionalStyles;
+document.head.appendChild(styleSheet);
+
+// Placeholder functions for features to be implemented
+function showAddEmployeeForm() {
+  showNotification('ميزة إضافة الموظفين قيد التطوير', 'warning');
 }
 
 function editEmployee(employeeId) {
-    const employee = findEmployeeById(employeeId);
-    if (!employee) {
-        showNotification('لم يتم العثور على الموظف!', 'error');
-        return;
-    }
-    
-    currentEditingEmployee = employeeId;
-    document.getElementById('modalTitle').textContent = `تعديل بيانات ${employee.name}`;
-    document.getElementById('modalBody').innerHTML = `
-        <form id="editEmployeeForm">
-            <div class="modal-form-row">
-                <div class="modal-form-group">
-                    <label for="editEmployeeName">اسم الموظف *</label>
-                    <input type="text" id="editEmployeeName" required value="${employee.name}">
-                </div>
-                <div class="modal-form-group">
-                    <label for="editEmployeePosition">المنصب *</label>
-                    <select id="editEmployeePosition" required>
-                        <option value="أخصائية مكياج" ${employee.position === 'أخصائية مكياج' ? 'selected' : ''}>أخصائية مكياج</option>
-                        <option value="مصففة شعر" ${employee.position === 'مصففة شعر' ? 'selected' : ''}>مصففة شعر</option>
-                        <option value="أخصائية بشرة" ${employee.position === 'أخصائية بشرة' ? 'selected' : ''}>أخصائية بشرة</option>
-                        <option value="أخصائية أظافر" ${employee.position === 'أخصائية أظافر' ? 'selected' : ''}>أخصائية أظافر</option>
-                        <option value="مساعدة إدارية" ${employee.position === 'مساعدة إدارية' ? 'selected' : ''}>مساعدة إدارية</option>
-                    </select>
-                </div>
-            </div>
-            <div class="modal-form-row">
-                <div class="modal-form-group">
-                    <label for="editEmployeeSalary">الراتب الأساسي *</label>
-                    <input type="number" id="editEmployeeSalary" required value="${employee.salary}">
-                </div>
-                <div class="modal-form-group">
-                    <label for="editEmployeePhone">رقم الهاتف *</label>
-                    <input type="tel" id="editEmployeePhone" required value="${employee.phone || ''}">
-                </div>
-            </div>
-            <div class="modal-form-row">
-                <div class="modal-form-group">
-                    <label for="editEmployeeEmail">البريد الإلكتروني</label>
-                    <input type="email" id="editEmployeeEmail" value="${employee.email || ''}">
-                </div>
-                <div class="modal-form-group">
-                    <label for="editEmployeeJoinDate">تاريخ التوظيف</label>
-                    <input type="date" id="editEmployeeJoinDate" value="${employee.joinDate || ''}">
-                </div>
-            </div>
-            <div class="modal-form-group">
-                <label for="editEmployeeAddress">العنوان</label>
-                <textarea id="editEmployeeAddress">${employee.address || ''}</textarea>
-            </div>
-        </form>
-    `;
-    
-    document.getElementById('saveBtn').onclick = saveEmployeeChanges;
-    openModal();
+  showNotification('ميزة تعديل الموظف قيد التطوير', 'warning');
 }
 
 function manageSalary(employeeId) {
-    const employee = findEmployeeById(employeeId);
-    if (!employee) {
-        showNotification('لم يتم العثور على الموظف!', 'error');
-        return;
-    }
-    
-    currentEditingEmployee = employeeId;
-    const basicSalary = employee.salary;
-    const allowances = 500;
-    const deductions = employee.absences * (basicSalary / 30);
-    const totalSalary = basicSalary + allowances - deductions;
-    
-    document.getElementById('modalTitle').textContent = `إدارة راتب ${employee.name}`;
-    document.getElementById('modalBody').innerHTML = `
-        <div class="stats-container" style="margin-bottom: 30px;">
-            <div class="stat-card">
-                <span class="stat-icon">💰</span>
-                <span class="stat-value">${basicSalary.toLocaleString()}</span>
-                <span class="stat-label">الراتب الحالي</span>
-            </div>
-            <div class="stat-card">
-                <span class="stat-icon">📊</span>
-                <span class="stat-value">${Math.round(totalSalary).toLocaleString()}</span>
-                <span class="stat-label">الراتب بعد الخصومات</span>
-            </div>
-        </div>
-        
-        <form id="manageSalaryForm">
-            <div class="modal-form-row">
-                <div class="modal-form-group">
-                    <label for="newBasicSalary">الراتب الأساسي الجديد *</label>
-                    <input type="number" id="newBasicSalary" required value="${basicSalary}" min="3000" max="20000">
-                </div>
-                <div class="modal-form-group">
-                    <label for="salaryAllowances">البدلات والحوافز</label>
-                    <input type="number" id="salaryAllowances" value="${allowances}" min="0">
-                </div>
-            </div>
-            <div class="modal-form-group">
-                <label for="salaryNotes">ملاحظات على التعديل</label>
-                <textarea id="salaryNotes" placeholder="أدخل سبب تعديل الراتب (اختياري)"></textarea>
-            </div>
-        </form>
-    `;
-    
-    document.getElementById('saveBtn').onclick = saveSalaryChanges;
-    openModal();
+  showNotification('ميزة إدارة الراتب قيد التطوير', 'warning');
 }
 
 function manageAttendance(employeeId) {
-    const employee = findEmployeeById(employeeId);
-    if (!employee) {
-        showNotification('لم يتم العثور على الموظف!', 'error');
-        return;
-    }
-    
-    currentEditingEmployee = employeeId;
-    document.getElementById('modalTitle').textContent = `إدارة حضور ${employee.name}`;
-    
-    // Generate attendance calendar for current month
-    const today = new Date();
-    const currentMonth = today.getMonth();
-    const currentYear = today.getFullYear();
-    const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
-    
-    let attendanceGrid = '';
-    for (let day = 1; day <= daysInMonth; day++) {
-        const dateKey = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-        const attendanceStatus = employee.attendanceRecord && employee.attendanceRecord[dateKey] ? employee.attendanceRecord[dateKey] : '';
-        
-        attendanceGrid += `
-            <div class="day-selector ${attendanceStatus}" 
-                 data-date="${dateKey}" 
-                 onclick="toggleAttendance('${dateKey}', this)">
-                <div>${day}</div>
-                <div style="font-size: 0.7rem;">
-                    ${attendanceStatus === 'present' ? '✅' : attendanceStatus === 'absent' ? '❌' : '⚪'}
-                </div>
-            </div>
-        `;
-    }
-    
-    document.getElementById('modalBody').innerHTML = `
-        <div class="stats-container" style="margin-bottom: 30px;">
-            <div class="stat-card">
-                <span class="stat-icon">✅</span>
-                <span class="stat-value">${employee.attendance || 0}</span>
-                <span class="stat-label">أيام الحضور</span>
-            </div>
-            <div class="stat-card">
-                <span class="stat-icon">❌</span>
-                <span class="stat-value">${employee.absences || 0}</span>
-                <span class="stat-label">أيام الغياب</span>
-            </div>
-            <div class="stat-card">
-                <span class="stat-icon">⏰</span>
-                <span class="stat-value">${employee.delays || 0}</span>
-                <span class="stat-label">مرات التأخير</span>
-            </div>
-        </div>
-        
-        <h4 style="text-align: center; margin: 20px 0; color: var(--primary-gold);">
-            تقويم الحضور - ${today.toLocaleDateString('ar-SA', { month: 'long', year: 'numeric' })}
-        </h4>
-        <p style="text-align: center; margin-bottom: 20px; color: var(--charcoal);">
-            انقر على الأيام لتسجيل الحضور أو الغياب
-        </p>
-        
-        <div class="attendance-day-selector">
-            ${attendanceGrid}
-        </div>
-        
-        <div style="text-align: center; margin: 20px 0;">
-            <div style="display: inline-flex; gap: 20px; font-size: 0.9rem;">
-                <span>✅ حضور</span>
-                <span>❌ غياب</span>
-                <span>⚪ لم يتم التسجيل</span>
-            </div>
-        </div>
-    `;
-    
-    document.getElementById('saveBtn').onclick = saveAttendanceChanges;
-    openModal();
+  showNotification('ميزة إدارة الحضور قيد التطوير', 'warning');
 }
 
-// Toggle attendance status
-function toggleAttendance(dateKey, element) {
-    const currentStatus = element.classList.contains('present') ? 'present' : 
-                         element.classList.contains('absent') ? 'absent' : '';
-    
-    // Remove all status classes
-    element.classList.remove('present', 'absent');
-    
-    let newStatus = '';
-    let icon = '⚪';
-    
-    if (currentStatus === '') {
-        newStatus = 'present';
-        icon = '✅';
-        element.classList.add('present');
-    } else if (currentStatus === 'present') {
-        newStatus = 'absent';
-        icon = '❌';
-        element.classList.add('absent');
-    }
-    
-    // Update icon
-    element.children[1].textContent = icon;
-    
-    // Store the change temporarily
-    element.setAttribute('data-status', newStatus);
+function generateCalendar() {
+  // Calendar generation logic will be implemented
+  console.log('Generating calendar...');
 }
 
-// Save functions - محدثة لاستخدام التخزين المحلي
-function saveNewEmployee() {
-    const form = document.getElementById('addEmployeeForm');
-    
-    const name = document.getElementById('employeeName').value.trim();
-    const position = document.getElementById('employeePosition').value;
-    const salary = parseInt(document.getElementById('employeeSalary').value);
-    const phone = document.getElementById('employeePhone').value.trim();
-    const email = document.getElementById('employeeEmail').value.trim();
-    const joinDate = document.getElementById('employeeJoinDate').value;
-    const address = document.getElementById('employeeAddress').value.trim();
-    
-    if (!name || !position || !salary || !phone) {
-        showNotification('يرجى ملء جميع الحقول المطلوبة', 'error');
-        return;
-    }
-    
-    // التحقق من عدم تكرار الأسماء
-    const existingEmployees = dataStorage.getAllEmployees();
-    const nameExists = existingEmployees.some(emp => emp.name.toLowerCase() === name.toLowerCase());
-    if (nameExists) {
-        showNotification('يوجد موظف بنفس الاسم بالفعل', 'error');
-        return;
-    }
-    
-    // إنشاء معرف جديد للموظف
-    const employeeCount = existingEmployees.length;
-    const newId = `EMP${String(employeeCount + 1).padStart(3, '0')}`;
-    const username = name.replace(/\s+/g, '_').toLowerCase() + '_' + Date.now();
-    
-    const newEmployee = {
-        password: 'emp123', // كلمة مرور افتراضية
-        role: 'employee',
-        name: name,
-        id: newId,
-        salary: salary,
-        position: position,
-        phone: phone,
-        email: email,
-        joinDate: joinDate,
-        address: address,
-        attendance: 0,
-        absences: 0,
-        delays: 0,
-        attendanceRecord: {},
-        createdAt: new Date().toISOString(),
-        lastUpdated: new Date().toISOString()
-    };
-    
-    // حفظ في التخزين المحلي
-    if (dataStorage.addEmployee(username, newEmployee)) {
-        // تحديث المتغير المحلي
-        users = dataStorage.getData();
-        
-        showNotification(`تم إضافة الموظف ${name} بنجاح!`, 'success');
-        closeModal();
-        setupEmployeeGrid(); // تحديث شبكة الموظفين
-        
-        // إنشاء سجل في النشاط
-        logActivity('إضافة موظف', `تم إضافة موظف جديد: ${name} (${newId})`);
-    } else {
-        showNotification('فشل في إضافة الموظف', 'error');
-    }
+function setupEmployeeSalary() {
+  // Employee salary setup
+  console.log('Setting up employee salary...');
 }
 
-function saveEmployeeChanges() {
-    const name = document.getElementById('editEmployeeName').value.trim();
-    const position = document.getElementById('editEmployeePosition').value;
-    const salary = parseInt(document.getElementById('editEmployeeSalary').value);
-    const phone = document.getElementById('editEmployeePhone').value.trim();
-    const email = document.getElementById('editEmployeeEmail').value.trim();
-    const joinDate = document.getElementById('editEmployeeJoinDate').value;
-    const address = document.getElementById('editEmployeeAddress').value.trim();
-    
-    if (!name || !position || !salary || !phone) {
-        showNotification('يرجى ملء جميع الحقول المطلوبة', 'error');
-        return;
-    }
-    
-    // البحث عن الموظف وتحديث بياناته
-    let updatedUsername = null;
-    for (let [username, user] of Object.entries(users)) {
-        if (user.id === currentEditingEmployee) {
-            const updatedData = {
-                name: name,
-                position: position,
-                salary: salary,
-                phone: phone,
-                email: email,
-                joinDate: joinDate,
-                address: address,
-                lastUpdated: new Date().toISOString()
-            };
-            
-            if (dataStorage.updateEmployee(username, updatedData)) {
-                updatedUsername = username;
-                users = dataStorage.getData(); // تحديث البيانات المحلية
-                break;
-            }
-        }
-    }
-    
-    if (updatedUsername) {
-        showNotification(`تم تحديث بيانات ${name} بنجاح!`, 'success');
-        closeModal();
-        setupEmployeeGrid(); // تحديث شبكة الموظفين
-        
-        // إنشاء سجل في النشاط
-        logActivity('تحديث موظف', `تم تحديث بيانات الموظف: ${name}`);
-    } else {
-        showNotification('فشل في تحديث البيانات', 'error');
-    }
+function setupEmployeeReports() {
+  // Employee reports setup
+  console.log('Setting up employee reports...');
 }
 
-function saveSalaryChanges() {
-    const newSalary = parseInt(document.getElementById('newBasicSalary').value);
-    const allowances = parseInt(document.getElementById('salaryAllowances').value) || 0;
-    const notes = document.getElementById('salaryNotes').value.trim();
-    
-    if (!newSalary || newSalary < 3000) {
-        showNotification('يرجى إدخال راتب صالح (لا يقل عن 3000 ريال)', 'error');
-        return;
-    }
-    
-    // البحث عن الموظف وتحديث راتبه
-    let updatedEmployee = null;
-    for (let [username, user] of Object.entries(users)) {
-        if (user.id === currentEditingEmployee) {
-            const oldSalary = user.salary;
-            const updatedData = {
-                salary: newSalary,
-                salaryHistory: [
-                    ...(user.salaryHistory || []),
-                    {
-                        oldSalary: oldSalary,
-                        newSalary: newSalary,
-                        allowances: allowances,
-                        notes: notes,
-                        changedBy: currentUser.name,
-                        changeDate: new Date().toISOString()
-                    }
-                ],
-                lastUpdated: new Date().toISOString()
-            };
-            
-            if (dataStorage.updateEmployee(username, updatedData)) {
-                updatedEmployee = user.name;
-                users = dataStorage.getData(); // تحديث البيانات المحلية
-                break;
-            }
-        }
-    }
-    
-    if (updatedEmployee) {
-        showNotification(`تم تحديث راتب ${updatedEmployee} بنجاح!`, 'success');
-        closeModal();
-        setupAdminContent(); // تحديث المحتوى الإداري
-        
-        // إنشاء سجل في النشاط
-        logActivity('تحديث راتب', `تم تحديث راتب الموظف: ${updatedEmployee} من ${users[Object.keys(users).find(k => users[k].id === currentEditingEmployee)].salary} إلى ${newSalary}`);
-    } else {
-        showNotification('فشل في تحديث الراتب', 'error');
-    }
+function setupAdminStats() {
+  // Admin statistics setup
+  console.log('Setting up admin statistics...');
 }
 
-function saveAttendanceChanges() {
-    const daySelectors = document.querySelectorAll('.day-selector[data-status]');
-    const employee = findEmployeeById(currentEditingEmployee);
-    
-    if (!employee) {
-        showNotification('لم يتم العثور على الموظف', 'error');
-        return;
-    }
-    
-    let updatedUsername = null;
-    for (let [username, user] of Object.entries(users)) {
-        if (user.id === currentEditingEmployee) {
-            const attendanceRecord = { ...(user.attendanceRecord || {}) };
-            let presentCount = 0;
-            let absentCount = 0;
-            let changes = [];
-            
-            daySelectors.forEach(selector => {
-                const date = selector.getAttribute('data-date');
-                const status = selector.getAttribute('data-status');
-                
-                if (status && attendanceRecord[date] !== status) {
-                    changes.push({ date, oldStatus: attendanceRecord[date] || 'غير محدد', newStatus: status });
-                    attendanceRecord[date] = status;
-                }
-            });
-            
-            // إعادة حساب الإحصائيات
-            Object.values(attendanceRecord).forEach(status => {
-                if (status === 'present') presentCount++;
-                else if (status === 'absent') absentCount++;
-            });
-            
-            const updatedData = {
-                attendanceRecord: attendanceRecord,
-                attendance: presentCount,
-                absences: absentCount,
-                attendanceHistory: [
-                    ...(user.attendanceHistory || []),
-                    {
-                        changes: changes,
-                        changedBy: currentUser.name,
-                        changeDate: new Date().toISOString()
-                    }
-                ],
-                lastUpdated: new Date().toISOString()
-            };
-            
-            if (dataStorage.updateEmployee(username, updatedData)) {
-                updatedUsername = username;
-                users = dataStorage.getData();
-                break;
-            }
-        }
-    }
-    
-    if (updatedUsername) {
-        showNotification(`تم تحديث سجل حضور ${employee.name} بنجاح!`, 'success');
-        closeModal();
-        setupEmployeeGrid();
-        
-        // إنشاء سجل في النشاط
-        logActivity('تحديث حضور', `تم تحديث سجل حضور الموظف: ${employee.name}`);
-    } else {
-        showNotification('فشل في تحديث سجل الحضور', 'error');
-    }
+function setupAdminReports() {
+  // Admin reports setup
+  console.log('Setting up admin reports...');
 }
 
-// دالة لتسجيل النشاطات
-function logActivity(type, description) {
-    const activities = JSON.parse(localStorage.getItem('alamalarous_activities') || '[]');
-    activities.unshift({
-        id: Date.now(),
-        type: type,
-        description: description,
-        user: currentUser.name,
-        timestamp: new Date().toISOString(),
-        date: new Date().toLocaleDateString('ar-SA')
-    });
-    
-    // الاحتفاظ بآخر 100 نشاط فقط
-    if (activities.length > 100) {
-        activities.splice(100);
-    }
-    
-    localStorage.setItem('alamalarous_activities', JSON.stringify(activities));
-}
-
-// دالة للحصول على سجل النشاطات
-function getActivities(limit = 10) {
-    const activities = JSON.parse(localStorage.getItem('alamalarous_activities') || '[]');
-    return activities.slice(0, limit);
-}
-
-// إعداد قسم إدارة البيانات
-function setupDataManagement() {
-    updateDataStats();
-    displayRecentActivities();
-}
-
-// تحديث إحصائيات البيانات
-function updateDataStats() {
-    const allData = dataStorage.getData() || {};
-    const employees = Object.values(allData).filter(user => user.role === 'employee');
-    const activities = getActivities(1000);
-    
-    // حساب حجم البيانات
-    const dataStr = JSON.stringify(allData);
-    const dataSize = new Blob([dataStr]).size;
-    const dataSizeKB = (dataSize / 1024).toFixed(2);
-    
-    // آخر نسخة احتياطية
-    const lastBackup = localStorage.getItem('alamalarous_last_backup');
-    const lastBackupDate = lastBackup ? new Date(lastBackup).toLocaleDateString('ar-SA') : 'لا يوجد';
-    
-    // تحديث القيم
-    document.getElementById('totalEmployeesCount').textContent = employees.length;
-    document.getElementById('dataSize').textContent = `${dataSizeKB} KB`;
-    document.getElementById('lastBackup').textContent = lastBackupDate;
-    document.getElementById('totalActivities').textContent = activities.length;
-}
-
-// عرض النشاطات الحديثة
 function displayRecentActivities() {
-    const activities = getActivities(10);
-    const container = document.getElementById('recentActivities');
-    
-    if (activities.length === 0) {
-        container.innerHTML = '<div style="padding: 24px; text-align: center; color: var(--slate-gray);">لا توجد نشاطات مسجلة</div>';
-        return;
-    }
-    
-    container.innerHTML = activities.map(activity => `
-        <div class="table-row">
-            <div>
-                <div style="font-weight: 600; color: var(--deep-navy);">${activity.type}</div>
-                <div style="font-size: 0.9rem; color: var(--slate-gray); margin-top: 2px;">${activity.description}</div>
-                <div style="font-size: 0.8rem; color: var(--slate-gray); margin-top: 4px;">بواسطة: ${activity.user}</div>
-            </div>
-            <div style="text-align: left; color: var(--slate-gray); font-size: 0.85rem;">
-                <div>${activity.date}</div>
-                <div style="margin-top: 2px;">${new Date(activity.timestamp).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' })}</div>
-            </div>
-        </div>
-    `).join('');
-}
-
-// تصدير البيانات
-function exportData() {
-    try {
-        const allData = {
-            employees: dataStorage.getData(),
-            activities: JSON.parse(localStorage.getItem('alamalarous_activities') || '[]'),
-            exportDate: new Date().toISOString(),
-            version: '1.0'
-        };
-        
-        const dataStr = JSON.stringify(allData, null, 2);
-        const dataBlob = new Blob([dataStr], {type: 'application/json'});
-        const url = URL.createObjectURL(dataBlob);
-        
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = `alamalarous_backup_${new Date().toISOString().split('T')[0]}.json`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        
-        // تسجيل تاريخ النسخة الاحتياطية
-        localStorage.setItem('alamalarous_last_backup', new Date().toISOString());
-        
-        logActivity('نسخة احتياطية', 'تم تصدير نسخة احتياطية كاملة من البيانات');
-        showNotification('تم تصدير النسخة الاحتياطية بنجاح', 'success');
-        updateDataStats();
-        
-    } catch (error) {
-        console.error('خطأ في تصدير البيانات:', error);
-        showNotification('حدث خطأ أثناء تصدير البيانات', 'error');
-    }
-}
-
-// التعامل مع استيراد الملف
-function handleImportFile(event) {
-    const file = event.target.files[0];
-    if (!file) return;
-    
-    if (file.type !== 'application/json') {
-        showNotification('يرجى اختيار ملف JSON صحيح', 'error');
-        return;
-    }
-    
-    const reader = new FileReader();
-    reader.onload = function(e) {
-        try {
-            const importedData = JSON.parse(e.target.result);
-            
-            // التحقق من صحة البيانات
-            if (!importedData.employees) {
-                showNotification('ملف البيانات غير صحيح', 'error');
-                return;
-            }
-            
-            // تأكيد الاستيراد
-            if (confirm('هذا سيحل محل جميع البيانات الحالية. هل أنت متأكد؟')) {
-                // استيراد البيانات
-                dataStorage.saveData(importedData.employees);
-                
-                // استيراد النشاطات إن وجدت
-                if (importedData.activities) {
-                    localStorage.setItem('alamalarous_activities', JSON.stringify(importedData.activities));
-                }
-                
-                // تحديث البيانات المحلية
-                users = dataStorage.getData();
-                
-                logActivity('استيراد بيانات', 'تم استيراد بيانات جديدة من نسخة احتياطية');
-                showNotification('تم استيراد البيانات بنجاح', 'success');
-                
-                // إعادة تحميل الصفحة لتحديث العرض
-                setTimeout(() => {
-                    location.reload();
-                }, 1500);
-            }
-            
-        } catch (error) {
-            console.error('خطأ في استيراد البيانات:', error);
-            showNotification('خطأ في قراءة ملف البيانات', 'error');
-        }
-    };
-    
-    reader.readAsText(file);
-    // مسح قيمة input لتمكين اختيار نفس الملف مرة أخرى
-    event.target.value = '';
-}
-
-// مسح جميع البيانات
-function clearAllData() {
-    const confirmation = prompt('لحذف جميع البيانات، اكتب "حذف نهائي" في الصندوق أدناه:');
-    
-    if (confirmation === 'حذف نهائي') {
-        try {
-            // مسح بيانات الموظفين
-            localStorage.removeItem('alamalarous_employees_data');
-            
-            // مسح النشاطات
-            localStorage.removeItem('alamalarous_activities');
-            
-            // مسح تاريخ النسخ الاحتياطية
-            localStorage.removeItem('alamalarous_last_backup');
-            
-            showNotification('تم مسح جميع البيانات', 'success');
-            
-            // إعادة تحميل الصفحة
-            setTimeout(() => {
-                location.reload();
-            }, 1500);
-            
-        } catch (error) {
-            console.error('خطأ في مسح البيانات:', error);
-            showNotification('حدث خطأ أثناء مسح البيانات', 'error');
-        }
-    } else if (confirmation !== null) {
-        showNotification('تم إلغاء العملية - النص المدخل غير صحيح', 'warning');
-    }
-}
-
-// إعادة تعيين للبيانات الافتراضية
-function resetToDefaults() {
-    if (confirm('هذا سيعيد جميع البيانات للحالة الافتراضية. هل أنت متأكد؟')) {
-        try {
-            // إعادة تعيين البيانات للافتراضية
-            dataStorage.saveData(defaultUsers);
-            
-            // مسح النشاطات القديمة
-            localStorage.removeItem('alamalarous_activities');
-            
-            // تحديث البيانات المحلية
-            users = dataStorage.getData();
-            
-            logActivity('إعادة تعيين', 'تم إعادة تعيين النظام للبيانات الافتراضية');
-            showNotification('تم إعادة التعيين للبيانات الافتراضية', 'success');
-            
-            // إعادة تحميل الصفحة
-            setTimeout(() => {
-                location.reload();
-            }, 1500);
-            
-        } catch (error) {
-            console.error('خطأ في إعادة التعيين:', error);
-            showNotification('حدث خطأ أثناء إعادة التعيين', 'error');
-        }
-    }
-}
-
-function saveChanges() {
-    // This function will be overwritten by specific save functions
-    showNotification('تم حفظ التغييرات بنجاح!', 'success');
-    closeModal();
-}
-
-function manageSalaries() {
-    showNotification('تم فتح نظام إدارة الرواتب المتقدم', 'success');
-}
-
-function generatePayroll() {
-    showNotification('جاري إنشاء كشف المرتبات...', 'success');
-    
-    // Create a simple payroll report
-    setTimeout(() => {
-        let payrollData = 'كشف المرتبات - سبتمبر 2025\n\n';
-        
-        Object.values(users).forEach(user => {
-            if (user.role === 'employee') {
-                const basicSalary = user.salary;
-                const allowances = 500;
-                const deductions = user.absences * (basicSalary / 30);
-                const totalSalary = basicSalary + allowances - deductions;
-                
-                payrollData += `${user.name} - ${user.position}\n`;
-                payrollData += `الراتب الأساسي: ${basicSalary.toLocaleString()} ريال\n`;
-                payrollData += `البدلات: ${allowances} ريال\n`;
-                payrollData += `الخصومات: ${Math.round(deductions)} ريال\n`;
-                payrollData += `الإجمالي: ${Math.round(totalSalary).toLocaleString()} ريال\n\n`;
-            }
-        });
-        
-        console.log(payrollData);
-        showNotification('تم إنشاء كشف المرتبات بنجاح!', 'success');
-    }, 2000);
-}
-
-function generateMonthlyReport() {
-    showNotification('جاري إنشاء التقرير الشهري الشامل...', 'success');
-}
-
-function generateFinancialReport() {
-    showNotification('جاري إنشاء التقرير المالي...', 'success');
-}
-
-// Logout function
-function logout() {
-    if (confirm('هل أنت متأكد من تسجيل الخروج؟')) {
-        currentUser = null;
-        document.getElementById('dashboard').style.display = 'none';
-        document.getElementById('loginScreen').style.display = 'flex';
-        document.getElementById('loginForm').reset();
-        showNotification('تم تسجيل الخروج بنجاح', 'success');
-    }
-}
-
-// Show notification
-function showNotification(message, type = 'success') {
-    const notification = document.createElement('div');
-    notification.className = `notification ${type}`;
-    notification.textContent = message;
-    document.body.appendChild(notification);
-    
-    setTimeout(() => {
-        if (notification.parentNode) {
-            notification.parentNode.removeChild(notification);
-        }
-    }, 3000);
+  // Display recent activities
+  console.log('Displaying recent activities...');
 }
